@@ -6,8 +6,9 @@ A complete end-to-end Machine Learning application that predicts a student's **M
 
 The deployment flow implemented by the project is:
 
-<img width="1584" height="840" alt="AWS CICD Docker Deployment " src="https://github.com/user-attachments/assets/ebd79aca-d6c9-499b-8a17-b010dd02c28a" />
+**GitHub → GitHub Actions → Docker Image → Amazon ECR → Amazon EC2 → Flask ML App**
 
+<img width="1584" height="840" alt="AWS CICD Docker Deployment " src="https://github.com/user-attachments/assets/43e8bd9e-1b76-489f-ad1a-67a12d4d793c" />
 
 ### Deployment flow
 
@@ -649,6 +650,230 @@ EC2 deployment
 The repository also contains an Elastic Beanstalk configuration under `.ebextensions/`. The current deployment architecture shown in the project documentation uses **Amazon ECR + Amazon EC2**, while the Elastic Beanstalk configuration is a separate deployment configuration retained in the repository.
 
 The project includes both notebooks for experimentation and modular Python components for the application/training pipeline.
+
+
+---
+
+## Deployment Setup Notes — Flask + ML on AWS using ECR + EC2
+
+These are the practical deployment steps used for this project.
+
+### 1. Docker Image Creation
+
+Create a Dockerfile for the Flask + ML application and build the Docker image locally.
+
+```bash
+docker build -t student-performance .
+```
+
+The image is the packaged version of the application that will later be stored in Amazon ECR and deployed to EC2.
+
+### 2. GitHub Actions Setup
+
+GitHub provides predefined workflow templates for AWS deployments. The workflow was adapted for this project so the final deployment architecture is:
+
+```text
+GitHub
+   ↓
+GitHub Actions
+   ↓
+Docker Image Build
+   ↓
+Amazon ECR
+   ↓
+Amazon EC2
+   ↓
+Docker Container
+   ↓
+Flask ML Application
+```
+
+The important point is to use the workflow appropriate for **ECR + EC2**, rather than an ECS-only deployment workflow.
+
+### 3. IAM User Creation
+
+Create an IAM user to allow GitHub Actions to access AWS programmatically.
+
+Create/download the access keys and keep them securely stored.
+
+The credentials used by GitHub Actions are:
+
+```text
+AWS_ACCESS_KEY_ID
+AWS_SECRET_ACCESS_KEY
+```
+
+Never commit the actual access-key values to the repository.
+
+### 4. Create Amazon ECR Repository
+
+Create the ECR repository from the AWS account.
+
+Example repository:
+
+```text
+student-performance
+```
+
+Example ECR URI:
+
+```text
+498548864658.dkr.ecr.us-east-1.amazonaws.com/student-performance
+```
+
+The ECR repository stores the Docker images produced by the CI/CD workflow.
+
+### 5. Create and Configure the EC2 Instance
+
+Create an Ubuntu EC2 instance. The project used a `t3.small` instance.
+
+After connecting to the instance, install the required packages, especially Docker.
+
+#### Ubuntu Package Setup
+
+```bash
+sudo apt-get update -y
+```
+
+Refreshes the available package information.
+
+```bash
+sudo apt-get upgrade
+```
+
+Upgrades installed packages to their newer available versions.
+
+#### Docker Setup
+
+Download the Docker installation script:
+
+```bash
+curl -fsSL https://get.docker.com -o get-docker.sh
+```
+
+- `curl` — downloads content from a URL.
+- `https://get.docker.com` — Docker installation script.
+- `-o get-docker.sh` — saves the script as `get-docker.sh`.
+- `-fsSL` — options that make `curl` follow redirects and fail appropriately on errors.
+
+Run the installation script:
+
+```bash
+sudo sh get-docker.sh
+```
+
+Executes the script with administrator privileges and installs Docker.
+
+Add the Ubuntu user to the Docker group:
+
+```bash
+sudo usermod -aG docker ubuntu
+```
+
+- `usermod` — modifies a user.
+- `-aG docker` — adds the user to the `docker` group.
+- `ubuntu` — the user being added.
+
+Apply the updated group membership:
+
+```bash
+newgrp docker
+```
+
+Starts a new shell with the updated Docker group membership, so a logout/login is not necessarily required.
+
+### 6. GitHub Actions Self-Hosted Runner
+
+A GitHub Actions self-hosted runner is configured on the EC2 instance.
+
+The runner allows GitHub Actions to execute the deployment commands directly on the EC2 machine.
+
+Typical setup:
+
+```text
+GitHub Repository
+   ↓
+Repository Settings
+   ↓
+Actions
+   ↓
+Runners
+   ↓
+Create and run the given commands
+   ↓
+./run.sh
+   ↓
+Self-hosted runner starts
+```
+
+The runner continuously waits for jobs sent by GitHub Actions. When the workflow is triggered, the runner executes the deployment steps on the EC2 instance.
+
+### 7. Configure GitHub Actions Secrets
+
+The following repository secrets were configured for the deployment workflow:
+
+| Secret | Purpose |
+|---|---|
+| `AWS_ACCESS_KEY_ID` | AWS IAM access key ID |
+| `AWS_SECRET_ACCESS_KEY` | AWS IAM secret access key |
+| `AWS_REGION` | AWS region, for example `us-east-1` |
+| `AWS_ECR_LOGIN_URI` | ECR registry URI without the repository name |
+| `ECR_REPOSITORY_NAME` | Name of the ECR repository |
+
+Example:
+
+```text
+AWS_REGION = us-east-1
+ECR_REPOSITORY_NAME = student-performance
+```
+
+The actual secret values should never be written in the README or committed to Git.
+
+### 8. Use the Correct CI/CD Workflow
+
+Make sure the GitHub Actions workflow matches the actual architecture.
+
+For this project, the intended deployment is:
+
+```text
+GitHub Push
+     ↓
+GitHub Actions
+     ↓
+Build Docker Image
+     ↓
+Push Image to Amazon ECR
+     ↓
+Self-hosted Runner on EC2
+     ↓
+Pull Latest Image from ECR
+     ↓
+Run Docker Container
+     ↓
+Flask ML Application on Port 8080
+```
+
+The EC2 deployment stage uses Docker commands to pull the latest ECR image and start the application container.
+
+---
+
+## Deployment Checklist
+
+Before running the deployment workflow, verify:
+
+- [ ] Dockerfile exists in the repository.
+- [ ] Docker image builds successfully.
+- [ ] ECR repository exists.
+- [ ] EC2 instance is running.
+- [ ] Docker is installed on EC2.
+- [ ] Ubuntu user can run Docker commands.
+- [ ] GitHub Actions self-hosted runner is online.
+- [ ] Required GitHub Actions secrets are configured.
+- [ ] ECR repository name is correct.
+- [ ] AWS region is correct.
+- [ ] The CI/CD workflow is configured for ECR + EC2.
+- [ ] Application/container port is configured as `8080`.
+
 
 ---
 
